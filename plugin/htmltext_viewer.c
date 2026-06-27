@@ -47,7 +47,7 @@
  *   make CFLAGS_EXTRA='-DHTMLTEXT_RENDER_BIN=\"/usr/lib/claws-mail/htmltext-render\"'
  */
 #ifndef HTMLTEXT_RENDER_BIN
-#  define HTMLTEXT_RENDER_BIN "htmltext-render"
+    #define HTMLTEXT_RENDER_BIN "htmltext-render"
 #endif
 
 /* Maximum bytes read from the render process stdout (4 MiB). */
@@ -68,6 +68,76 @@ struct _HtmlTextViewer {
 
 /* Forward declaration */
 static MimeViewerFactory htmltext_viewer_factory;
+
+/* Write all @len bytes of @buf to @fd, retrying on EINTR.
+ * Returns TRUE on success, FALSE on unrecoverable error.
+ */
+static gboolean pipe_write_all(gint fd, const gchar *buf, gsize len)
+{
+    gboolean ok = TRUE;
+
+    while (len > 0) {
+        gssize n = write(fd, buf, len);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            g_warning("%s: write: %s", PLUGIN_NAME, g_strerror(errno));
+            ok = FALSE;
+            break;
+        }
+        buf += n;
+        len -= (gsize) n;
+    }
+
+    /* Always close fd; check for late errors (e.g. broken pipe). */
+    if (close(fd) < 0) {
+        g_warning("%s: close(stdin): %s", PLUGIN_NAME, g_strerror(errno));
+        ok = FALSE;
+    }
+
+    return ok;
+}
+
+/* Read all output from @fd into a newly allocated string (NUL-terminated),
+ * capped at MAX_OUTPUT_BYTES.  Sets *out_text and *out_len on success.
+ * Returns TRUE on success, FALSE on unrecoverable error.
+ */
+static gboolean pipe_read_all(gint fd, gchar **out_text, gsize *out_len)
+{
+    GString *buf   = g_string_new_len(NULL, 8192);
+    gchar    chunk[4096];
+    gssize   n = 0;
+
+    while (TRUE) {
+        n = read(fd, chunk, sizeof(chunk));
+
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            g_warning("%s: read: %s", PLUGIN_NAME, g_strerror(errno));
+            g_string_free(buf, TRUE);
+            return FALSE;
+        }
+
+        if (n == 0) break; /* EOF */
+
+        if (buf->len + (gsize) n > MAX_OUTPUT_BYTES) {
+            g_warning("%s: output truncated at %d bytes", PLUGIN_NAME,
+                      MAX_OUTPUT_BYTES);
+            g_string_append_len(buf, chunk, (gssize)(MAX_OUTPUT_BYTES - buf->len));
+            break;
+        }
+
+        g_string_append_len(buf, chunk, n);
+    }
+
+    if (close(fd) < 0)
+        g_warning("%s: close(stdout): %s", PLUGIN_NAME, g_strerror(errno));
+
+    *out_len  = buf->len;
+    *out_text = g_string_free(buf, FALSE); /* transfer ownership */
+
+    return TRUE;
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Helper: spawn htmltext-render, pipe HTML in, collect text out       */
@@ -97,88 +167,53 @@ static gboolean render_html_to_text(const gchar *html_bytes,
     gint     stdout_fd = -1;
     GPid     child_pid = 0;
     GError  *err       = NULL;
+    gint     status    = 0;
     gboolean ok        = FALSE;
 
     *out_text = NULL;
     *out_len  = 0;
 
     if (!g_spawn_async_with_pipes(
-            NULL,        /* working directory: inherit */
+            NULL,       /* working directory: inherit */
             argv,
-            NULL,        /* environment:       inherit */
+            NULL,       /* environment:       inherit */
             G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
             NULL, NULL,
             &child_pid,
             &stdin_fd,
             &stdout_fd,
-            NULL,        /* stderr: inherit */
+            NULL,       /* stderr: inherit */
             &err)) {
         g_warning("%s: spawn failed: %s", PLUGIN_NAME,
                   err ? err->message : "unknown");
         if (err) g_error_free(err);
+
         return FALSE;
     }
 
-    /* Write HTML to child stdin. */
-    {
-        const gchar *p   = html_bytes;
-        gsize        rem = html_len;
-        while (rem > 0) {
-            gssize n = write(stdin_fd, p, rem);
-            if (n < 0) {
-                if (errno == EINTR) continue;
-                g_warning("%s: write to stdin failed: %s", PLUGIN_NAME,
-                          g_strerror(errno));
-                goto cleanup;
-            }
-            p   += (gsize) n;
-            rem -= (gsize) n;
+    /* pipe_write_all() closes stdin_fd on success or error. */
+    if (pipe_write_all(stdin_fd, html_bytes, html_len)) {
+
+        /* pipe_read_all() closes stdout_fd on success or error. */
+        ok = pipe_read_all(stdout_fd, out_text, out_len);
+        stdout_fd = -1; /* already closed */
+    } else {
+        if (stdout_fd >= 0) {
+            if (close(stdout_fd) < 0)
+                g_warning("%s: close(stdout): %s", PLUGIN_NAME, g_strerror(errno));
         }
     }
-    close(stdin_fd);
-    stdin_fd = -1;
 
-    /* Read child stdout into a GString, capped at MAX_OUTPUT_BYTES. */
-    {
-        GString *buf = g_string_new_len(NULL, 8192);
-        gchar    chunk[4096];
-        while (TRUE) {
-            gssize n = read(stdout_fd, chunk, sizeof(chunk));
-            if (n < 0) {
-                if (errno == EINTR) continue;
-                g_warning("%s: read from stdout failed: %s", PLUGIN_NAME,
-                          g_strerror(errno));
-                g_string_free(buf, TRUE);
-                goto cleanup;
-            }
-            if (n == 0) break;
-            if (buf->len + (gsize) n > MAX_OUTPUT_BYTES) {
-                g_warning("%s: output exceeds %d bytes, truncating", PLUGIN_NAME,
-                          MAX_OUTPUT_BYTES);
-                g_string_append_len(buf, chunk,
-                                    (gssize)(MAX_OUTPUT_BYTES - buf->len));
-                break;
-            }
-            g_string_append_len(buf, chunk, n);
-        }
-        *out_len  = buf->len;
-        *out_text = g_string_free(buf, FALSE);
-    }
-    ok = TRUE;
-
-cleanup:
-    if (stdin_fd  >= 0) close(stdin_fd);
-    if (stdout_fd >= 0) close(stdout_fd);
-    if (child_pid > 0) {
-        gint status = 0;
-        g_spawn_close_pid(child_pid);
-        waitpid(child_pid, &status, 0);
+    if (waitpid(child_pid, &status, 0) >= 0) {
         if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-            g_warning("%s: render binary exited with status %d", PLUGIN_NAME,
-                      status);
+            g_warning("%s: render binary exited with status %d", PLUGIN_NAME, status);
+    } else {
+            g_warning("%s: error while waiting for render binary to exit", PLUGIN_NAME);
     }
+
     return ok;
 }
+
 
 /* ------------------------------------------------------------------ */
 /* MimeViewer callbacks                                                */
@@ -217,11 +252,13 @@ static void htmltext_show_mimepart(MimeViewer  *_viewer,
             _("[Error: could not create temp file]"), -1);
         return;
     }
+
     if (procmime_get_part(viewer->tmp_filename, partinfo) < 0) {
         gtk_text_buffer_set_text(buf,
             _("[Error: could not extract MIME part]"), -1);
         return;
     }
+
     if (!g_file_get_contents(viewer->tmp_filename, &html, &hlen, &err)) {
         gchar *msg = g_strdup_printf(_("[Error reading temp file: %s]"),
                                      err ? err->message : "?");
@@ -234,7 +271,7 @@ static void htmltext_show_mimepart(MimeViewer  *_viewer,
     if (!render_html_to_text(html, hlen, &plain, &plen)) {
         gtk_text_buffer_set_text(buf,
             _("[Error: htmltext-render failed "
-              "— is it installed and in PATH?]"), -1);
+              "— is it installed and in PATH variable ?]"), -1);
         g_free(html);
         return;
     }
@@ -335,7 +372,7 @@ static MimeViewerFactory htmltext_viewer_factory = {
 
 gint plugin_init(gchar **error)
 {
-    if (!check_plugin_version(MAKE_NUMERIC_VERSION(3, 17, 0, 0),
+    if (!check_plugin_version(MAKE_NUMERIC_VERSION(0, 0, 1, 0),
                               VERSION_NUMERIC,
                               PLUGIN_NAME, error))
         return -1;
