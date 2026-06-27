@@ -1,0 +1,23 @@
+[package]
+name        = "htmltext-render"
+version     = "0.1.0"
+edition     = "2021"
+description = "HTML → plain text renderer for the Claws Mail htmltext plugin"
+license     = "GPL-3.0-or-later"
+
+[[bin]]
+name = "htmltext-render"
+path = "src/main.rs"
+
+[dependencies]
+# HTML parser (Servo's html5ever under the hood) + plain-text layout engine.
+# "css" feature is intentionally OFF: we don't want colour annotations,
+# just structural text.  No network code is pulled in by this crate.
+html2text = { version = "0.17", default-features = false }
+
+[profile.release]
+# Minimise binary size; this is a short-lived process spawned per mail.
+opt-level  = "z"
+lto        = true
+codegen-units = 1
+strip      = true
