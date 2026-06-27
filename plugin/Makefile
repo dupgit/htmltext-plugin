@@ -26,7 +26,6 @@ endif
 
 CC      ?= gcc
 CFLAGS  := -O2 -Wall -Wextra -fPIC \
-           -UHAVE_CONFIG_H \
            $(GTK_CFLAGS) \
            $(CLAWS_CFLAGS) \
            $(CFLAGS_EXTRA)

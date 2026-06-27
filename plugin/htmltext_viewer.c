@@ -5,7 +5,10 @@
  * external binary (htmltext-render) and displaying the resulting
  * plain text in a GtkTextView.  No network access, no JS, no images.
  *
- * Copyright (C) 2026  <you>
+ * Copyright (C) 2026
+ *  - claude@anthropic.com (Sonnet 4.6)
+ *  - olivier.delhomme@free.fr (Human 1.0)
+ *
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Build note:
@@ -21,8 +24,6 @@
  * by a stray define elsewhere. */
 #undef HAVE_CONFIG_H
 
-#define VERSION "0.1.0"
-
 #include <errno.h>
 #include <string.h>
 #include <sys/wait.h>
@@ -33,6 +34,7 @@
 #include <gtk/gtk.h>
 
 /* Claws Mail public headers (installed by claws-mail-dev) */
+#include "common/version.h"
 #include "plugin.h"
 #include "mimeview.h"
 #include "procmime.h"
@@ -345,7 +347,7 @@ static MimeViewerFactory htmltext_viewer_factory = {
 gint plugin_init(gchar **error)
 {
     if (!check_plugin_version(MAKE_NUMERIC_VERSION(3, 17, 0, 0),
-                              MAKE_NUMERIC_VERSION(4, 4, 0, 0),
+                              VERSION_NUMERIC,
                               PLUGIN_NAME, error))
         return -1;
 
