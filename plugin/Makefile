@@ -1,42 +1,41 @@
 # Makefile for htmltext_viewer.so
 #
-# Prerequisites on the build machine:
-#   - claws-mail development headers  (claws-mail-dev or built from source)
-#   - pkg-config, gcc
+# Prerequisites:
+#   claws-mail-dev    (headers under /usr/include/claws-mail)
+#   pkg-config, gcc, libgtk-3-dev
 #
-# Typical usage:
+# Usage:
 #   make
-#   make install          (copies .so to the Claws plugin directory)
-#   make install PREFIX=/usr
+#   sudo make install          # → /usr/local/lib/claws-mail/plugins/
+#   sudo make install PREFIX=/usr
 
-PREFIX     ?= /usr/local
-PLUGINDIR  ?= $(PREFIX)/lib/claws-mail/plugins
+PREFIX    ?= /usr/local
+PLUGINDIR ?= $(PREFIX)/lib/claws-mail/plugins
 
-# --- pkg-config probes ---
-GTK_CFLAGS := $(shell pkg-config --cflags gtk+-3.0)
-GTK_LIBS   := $(shell pkg-config --libs   gtk+-3.0)
-GLIB_CFLAGS:= $(shell pkg-config --cflags glib-2.0)
-GLIB_LIBS  := $(shell pkg-config --libs   glib-2.0)
+# --- GTK / GLib ---
+GTK_CFLAGS := $(shell pkg-config --cflags gtk+-3.0 glib-2.0)
+GTK_LIBS   := $(shell pkg-config --libs   gtk+-3.0 glib-2.0)
 
-# Claws Mail headers: adjust CLAWS_SRCDIR if building against source tree,
-# or rely on the installed headers (e.g. /usr/include/claws-mail).
-CLAWS_INCLUDEDIR ?= $(shell pkg-config --variable=includedir claws-mail 2>/dev/null || echo /usr/include/claws-mail)
+# --- Claws Mail headers ---
+# Try pkg-config first (not always present); fall back to installed path.
+CLAWS_CFLAGS := $(shell pkg-config --cflags claws-mail 2>/dev/null)
+ifeq ($(CLAWS_CFLAGS),)
+  CLAWS_INCLUDEDIR ?= /usr/include/claws-mail
+  CLAWS_CFLAGS      = -I$(CLAWS_INCLUDEDIR)
+endif
 
-CFLAGS := -O2 -Wall -Wextra \
-          -fPIC \
-          -DHAVE_CONFIG_H \
-          $(GTK_CFLAGS) $(GLIB_CFLAGS) \
-          -I$(CLAWS_INCLUDEDIR)
-
-# Optional: hard-code the path to the Rust companion binary at compile time.
-# If unset, the plugin searches PATH at runtime.
-# CFLAGS += -DHTMLTEXT_RENDER_BIN=\"/usr/lib/claws-mail/htmltext-render\"
+CC      ?= gcc
+CFLAGS  := -O2 -Wall -Wextra -fPIC \
+           -UHAVE_CONFIG_H \
+           $(GTK_CFLAGS) \
+           $(CLAWS_CFLAGS) \
+           $(CFLAGS_EXTRA)
 
 LDFLAGS := -shared -Wl,-soname,htmltext_viewer.so \
-           $(GTK_LIBS) $(GLIB_LIBS)
+           $(GTK_LIBS)
 
-SRC := htmltext_viewer.c
-OBJ := $(SRC:.c=.o)
+SRC    := htmltext_viewer.c
+OBJ    := $(SRC:.c=.o)
 TARGET := htmltext_viewer.so
 
 .PHONY: all clean install

@@ -1,1 +1,3 @@
-renderer/target/
+render/target/
+plugin/*.o
+plugin/*.so
