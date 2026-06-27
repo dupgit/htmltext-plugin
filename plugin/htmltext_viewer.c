@@ -24,16 +24,11 @@
 
 /* Claws Mail public headers (installed by claws-mail-dev) */
 #include "common/version.h"
+#include "file-utils.h"
 #include "plugin.h"
 #include "mimeview.h"
 #include "procmime.h"
 #include "utils.h"
-
-/*
- * claws_unlink() lives in file-utils.h, which itself includes config.h.
- * Redefine it directly as g_unlink to avoid the transitive dependency.
- */
-#define claws_unlink(f)  g_unlink(f)
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
@@ -57,14 +52,12 @@
 /* Viewer struct                                                        */
 /* ------------------------------------------------------------------ */
 
-typedef struct _HtmlTextViewer HtmlTextViewer;
-
-struct _HtmlTextViewer {
+typedef struct {
     MimeViewer  mimeviewer;   /* MUST be first – Claws casts the pointer */
     GtkWidget  *scrolled;     /* GtkScrolledWindow (the widget Claws embeds) */
     GtkWidget  *textview;     /* GtkTextView inside the scrolled window      */
     gchar      *tmp_filename; /* temp file holding the current MIME part     */
-};
+} HtmlTextViewer;
 
 /* Forward declaration */
 static MimeViewerFactory htmltext_viewer_factory;
@@ -75,9 +68,10 @@ static MimeViewerFactory htmltext_viewer_factory;
 static gboolean pipe_write_all(gint fd, const gchar *buf, gsize len)
 {
     gboolean ok = TRUE;
+    gssize   n  = 0;
 
     while (len > 0) {
-        gssize n = write(fd, buf, len);
+        n = write(fd, buf, len);
         if (n < 0) {
             if (errno == EINTR) continue;
             g_warning("%s: write: %s", PLUGIN_NAME, g_strerror(errno));
@@ -104,8 +98,8 @@ static gboolean pipe_write_all(gint fd, const gchar *buf, gsize len)
 static gboolean pipe_read_all(gint fd, gchar **out_text, gsize *out_len)
 {
     GString *buf   = g_string_new_len(NULL, 8192);
+    gssize   n     = 0;
     gchar    chunk[4096];
-    gssize   n = 0;
 
     while (TRUE) {
         n = read(fd, chunk, sizeof(chunk));
@@ -162,7 +156,7 @@ static gboolean render_html_to_text(const gchar *html_bytes,
                                     gchar      **out_text,
                                     gsize       *out_len)
 {
-    gchar   *argv[2] = { HTMLTEXT_RENDER_BIN, NULL };
+    gchar   *argv[2]   = { HTMLTEXT_RENDER_BIN, NULL };
     gint     stdin_fd  = -1;
     gint     stdout_fd = -1;
     GPid     child_pid = 0;
