@@ -338,8 +338,10 @@ static MimeViewer *htmltext_viewer_create(void)
     gtk_text_view_set_editable(GTK_TEXT_VIEW(textview), FALSE);
     gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(textview), FALSE);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(textview), GTK_WRAP_WORD_CHAR);
-    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(textview), 6);
-    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(textview), 6);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(textview), 8);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(textview), 8);
+    gtk_text_view_set_pixels_above_lines(GTK_TEXT_VIEW(textview), 3);
+    gtk_text_view_set_pixels_inside_wrap(GTK_TEXT_VIEW(textview), 3);
 
     gtk_container_add(GTK_CONTAINER(scrolled), textview);
     gtk_widget_show_all(scrolled);

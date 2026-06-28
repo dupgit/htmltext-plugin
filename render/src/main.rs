@@ -18,9 +18,9 @@
 use std::io::{self, Read, Write};
 use std::process;
 
-// Render width in columns. 80 is a safe default; the plugin could pass this
+// Render width in columns. 90 is a safe default; the plugin could pass this
 // as a CLI argument in a future version if desired.
-const RENDER_WIDTH: usize = 80;
+const RENDER_WIDTH: usize = 90;
 
 // Hard cap on stdin bytes we will process (same as the C plugin's cap).
 const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
