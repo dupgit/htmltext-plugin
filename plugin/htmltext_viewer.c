@@ -141,6 +141,9 @@ static gboolean pipe_read_all(gint fd, gchar **out_text, gsize *out_len)
  * render_html_to_text:
  *   @html_bytes:  raw HTML content
  *   @html_len:    byte length of @html_bytes
+ *   @charset:     charset declared in the MIME part's Content-Type header,
+ *                 or NULL if none was declared (falls back to sniffing
+ *                 on the Rust side).
  *   @out_text:    (out) newly allocated NUL-terminated UTF-8 text, or NULL
  *   @out_len:     (out) byte length of *out_text
  *
@@ -153,10 +156,12 @@ static gboolean pipe_read_all(gint fd, gchar **out_text, gsize *out_len)
  */
 static gboolean render_html_to_text(const gchar *html_bytes,
                                     gsize        html_len,
+                                    const gchar *charset,
                                     gchar      **out_text,
                                     gsize       *out_len)
 {
-    gchar   *argv[2]   = { HTMLTEXT_RENDER_BIN, NULL };
+    gchar   *argv[4];
+    gint     argc      = 0;
     gint     stdin_fd  = -1;
     gint     stdout_fd = -1;
     GPid     child_pid = 0;
@@ -167,21 +172,28 @@ static gboolean render_html_to_text(const gchar *html_bytes,
     *out_text = NULL;
     *out_len  = 0;
 
+    argv[argc++] = HTMLTEXT_RENDER_BIN;
+    if (charset != NULL && *charset != '\0') {
+        argv[argc++] = "--charset";
+        argv[argc++] = (gchar *) charset;
+    }
+    argv[argc] = NULL;
+
     if (!g_spawn_async_with_pipes(
-            NULL,       /* working directory: inherit */
+            NULL,     /* working directory: inherit */
             argv,
-            NULL,       /* environment:       inherit */
+            NULL,     /* environment:       inherit */
             G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD,
-            NULL, NULL,
+            NULL,
+            NULL,
             &child_pid,
             &stdin_fd,
             &stdout_fd,
-            NULL,       /* stderr: inherit */
+            NULL,     /* stderr:            inherit */
             &err)) {
         g_warning("%s: spawn failed: %s", PLUGIN_NAME,
                   err ? err->message : "unknown");
         if (err) g_error_free(err);
-
         return FALSE;
     }
 
@@ -262,7 +274,9 @@ static void htmltext_show_mimepart(MimeViewer  *_viewer,
         return;
     }
 
-    if (!render_html_to_text(html, hlen, &plain, &plen)) {
+    const gchar *charset = procmime_mimeinfo_get_parameter(partinfo, "charset");
+
+    if (!render_html_to_text(html, hlen, charset, &plain, &plen)) {
         gtk_text_buffer_set_text(buf,
             _("[Error: htmltext-render failed "
               "— is it installed and in PATH variable ?]"), -1);

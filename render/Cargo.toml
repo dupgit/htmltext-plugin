@@ -10,6 +10,7 @@ name = "htmltext-render"
 path = "src/main.rs"
 
 [dependencies]
+encoding_rs = "0.8.35"
 # HTML parser (Servo's html5ever under the hood) + plain-text layout engine.
 # "css" feature is intentionally OFF: we don't want colour annotations,
 # just structural text.  No network code is pulled in by this crate.
